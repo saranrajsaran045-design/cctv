@@ -1,0 +1,17 @@
+# Python
+venv/
+__pycache__/
+*.pyc
+
+# Database
+*.db
+
+# Images (optional)
+*.jpg
+*.png
+
+# Node
+node_modules/
+
+# Env
+.env

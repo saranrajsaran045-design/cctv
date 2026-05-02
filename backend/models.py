@@ -1,0 +1,40 @@
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy.sql import func
+from sqlalchemy.orm import relationship
+from database import Base
+
+
+class User(Base):
+    """Admin User for Dashboard Access"""
+    __tablename__ = "users"
+    id              = Column(Integer, primary_key=True, index=True)
+    username        = Column(String(100), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+
+
+class Employee(Base):
+    """Registered Employees for Face Recognition"""
+    __tablename__ = "employees"
+    id              = Column(Integer, primary_key=True, index=True)
+    emp_id          = Column(String(50),  unique=True, index=True, nullable=False)
+    name            = Column(String(100), index=True,  nullable=False)
+    department      = Column(String(50))
+    hashed_password = Column(String(255), nullable=True)
+    created_at      = Column(DateTime, server_default=func.now())
+
+    attendances = relationship(
+        "AttendanceLog",
+        back_populates="employee",
+        cascade="all, delete-orphan"
+    )
+
+
+class AttendanceLog(Base):
+    """Attendance Records"""
+    __tablename__ = "attendance_logs"
+    id          = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"))
+    timestamp   = Column(DateTime, server_default=func.now())
+    camera_id   = Column(String(50))
+
+    employee = relationship("Employee", back_populates="attendances")
