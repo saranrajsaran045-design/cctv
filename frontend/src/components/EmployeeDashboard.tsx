@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Calendar, Clock, AlertCircle, CheckCircle, LogIn, LogOut, ChevronLeft, ChevronRight } from 'lucide-react';
+import { User, Calendar, Clock, AlertCircle, CheckCircle, LogIn, LogOut, ChevronLeft, ChevronRight, Key, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
 import api, { API_URL } from '../api';
 
@@ -19,6 +19,7 @@ interface AttendanceLog {
 const EmployeeDashboard: React.FC = () => {
   const [profile, setProfile] = useState<EmployeeProfile | null>(null);
   const [logs, setLogs] = useState<AttendanceLog[]>([]);
+  const [holidays, setHolidays] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   
   // Calendar State
@@ -26,17 +27,24 @@ const EmployeeDashboard: React.FC = () => {
   const [currentMonth, setCurrentMonth] = useState(new Date().getMonth());
   const [currentYear, setCurrentYear] = useState(new Date().getFullYear());
   
+  // Password Change
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
+  
   const navigate = useNavigate();
 
   useEffect(() => {
     const fetchData = async () => {
       try {
-        const [profileRes, logsRes] = await Promise.all([
+        const [profileRes, logsRes, holRes] = await Promise.all([
           api.get('/employee/me'),
-          api.get('/employee/my-attendance')
+          api.get('/employee/my-attendance'),
+          api.get('/holidays')
         ]);
         setProfile(profileRes.data);
         setLogs(logsRes.data);
+        setHolidays(holRes.data);
       } catch (err) {
         console.error('Error fetching employee data:', err);
       } finally {
@@ -45,6 +53,35 @@ const EmployeeDashboard: React.FC = () => {
     };
     fetchData();
   }, []);
+
+  const today = new Date().toISOString().split('T')[0];
+  const todayHoliday = holidays.find(h => {
+    const start = h.start_date.split('T')[0];
+    const end = h.end_date.split('T')[0];
+    return today >= start && today <= end;
+  });
+
+  const upcomingHolidays = holidays
+    .filter(h => new Date(h.start_date) > new Date())
+    .sort((a, b) => a.start_date.localeCompare(b.start_date))
+    .slice(0, 3);
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      alert("Passwords do not match!");
+      return;
+    }
+    try {
+      await api.put('/employee/change-password', { new_password: newPassword });
+      alert('Password updated successfully!');
+      setShowPasswordModal(false);
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Error updating password');
+    }
+  };
 
   if (loading) {
     return (
@@ -55,7 +92,6 @@ const EmployeeDashboard: React.FC = () => {
   }
 
   // Attendance Logic
-  const today = new Date().toISOString().split('T')[0];
   const todayLogs = logs.filter(log => log.timestamp.startsWith(today)).sort((a, b) => a.timestamp.localeCompare(b.timestamp));
 
   const hasInTime = todayLogs.length > 0;
@@ -67,9 +103,25 @@ const EmployeeDashboard: React.FC = () => {
   const canMarkOut = hasInTime && diffMinutes >= 1;
   const alreadyMarkedOut = todayLogs.length > 1;
 
-  const totalDays = 30;
-  const presentCount = logs.filter((v, i, a) => a.findIndex(t => t.timestamp.split('T')[0] === v.timestamp.split('T')[0]) === i).length;
-  const missedCount = Math.max(0, totalDays - presentCount);
+  const totalDaysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
+  const presentDates = new Set(logs.map(l => l.timestamp.split('T')[0]));
+  const presentCount = presentDates.size;
+  
+  // Calculate missed days more accurately: past days that were not present and not holidays
+  const missedCount = Array.from({ length: totalDaysInMonth }, (_, i) => i + 1).filter(d => {
+    const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+    const dayOfWeek = new Date(currentYear, currentMonth, d).getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    const isPast = dateStr < today;
+    const isPresent = presentDates.has(dateStr);
+    const holiday = holidays.find(h => {
+      const start = h.start_date.split('T')[0];
+      const end = h.end_date.split('T')[0];
+      return dateStr >= start && dateStr <= end;
+    });
+    
+    return isPast && !isPresent && !holiday && !isWeekend;
+  }).length;
 
   // Calculate Total Working Hours
   let totalMs = 0;
@@ -92,16 +144,42 @@ const EmployeeDashboard: React.FC = () => {
   const renderCalendar = () => {
     const daysInMonth = new Date(currentYear, currentMonth + 1, 0).getDate();
     const firstDay = new Date(currentYear, currentMonth, 1).getDay();
-    const presentDates = new Set(logs.map(l => l.timestamp.split('T')[0]));
 
     const days = [];
     for (let i = 0; i < firstDay; i++) days.push(<div key={`empty-${i}`} className="p-2"></div>);
     for (let d = 1; d <= daysInMonth; d++) {
       const dateStr = `${currentYear}-${String(currentMonth + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
       const isPresent = presentDates.has(dateStr);
+      const isPast = dateStr < today;
+      const dayOfWeek = new Date(currentYear, currentMonth, d).getDay();
+      const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+      
+      const holiday = holidays.find(h => {
+        const start = h.start_date.split('T')[0];
+        const end = h.end_date.split('T')[0];
+        return dateStr >= start && dateStr <= end;
+      });
+
+      let bgColor = 'text-gray-600 hover:bg-gray-100';
+      let statusText = '';
+
+      if (isPresent) {
+        bgColor = 'bg-green-100 text-green-700 border border-green-200 shadow-sm font-bold';
+      } else if (holiday) {
+        bgColor = 'bg-blue-600 text-white shadow-lg shadow-blue-100 font-bold';
+        statusText = 'Holiday';
+      } else if (isPast && !isWeekend) {
+        bgColor = 'bg-red-100 text-red-700 border border-red-200 shadow-sm font-bold';
+        statusText = 'Absent';
+      } else if (isWeekend) {
+        bgColor = 'text-gray-400 bg-gray-50';
+        statusText = 'Off';
+      }
+
       days.push(
-        <div key={d} className={`p-2 text-center rounded-lg font-medium text-sm ${isPresent ? 'bg-green-100 text-green-700 border border-green-200 shadow-sm font-bold' : 'text-gray-600 hover:bg-gray-100'}`}>
-          {d}
+        <div key={d} className={`p-2 text-center rounded-lg font-medium text-sm transition-all flex flex-col items-center justify-center min-h-[40px] ${bgColor}`}>
+          <span>{d}</span>
+          {statusText && <div className={`text-[6px] uppercase leading-none mt-0.5 ${holiday ? 'opacity-80' : 'opacity-60'}`}>{statusText}</div>}
         </div>
       );
     }
@@ -149,6 +227,21 @@ const EmployeeDashboard: React.FC = () => {
           )}
         </div>
       </div>
+
+      {/* Holiday Banner */}
+      {todayHoliday && (
+        <div className="bg-gradient-to-r from-orange-500 to-red-600 rounded-3xl p-8 text-white shadow-xl shadow-orange-200 animate-in slide-in-from-top-4 duration-500">
+          <div className="flex items-center gap-6">
+            <div className="bg-white/20 p-4 rounded-2xl backdrop-blur-md border border-white/30">
+              <Calendar size={32} />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black mb-1">Happy {todayHoliday.holiday_name}!</h2>
+              <p className="text-orange-50 opacity-90 font-bold">Today is observed as a {todayHoliday.type}. Take a break!</p>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Attendance Action Section */}
       <div className="bg-gradient-to-r from-blue-600 to-indigo-700 rounded-3xl p-8 text-white shadow-xl shadow-blue-200">
@@ -312,46 +405,75 @@ const EmployeeDashboard: React.FC = () => {
           </div>
         </div>
 
-        {/* Profile Card */}
+        {/* Upcoming Holidays Card */}
         <div className="bg-white rounded-2xl shadow-sm border border-gray-100 p-6">
-          <h3 className="font-bold text-gray-900 mb-6">Your Profile</h3>
-          <div className="text-center mb-6">
-            <div className="w-24 h-24 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-2xl mx-auto flex items-center justify-center text-white mb-4 shadow-lg overflow-hidden">
-              {profile?.has_face ? (
-                <img
-                  src={`${API_URL}/employees/${profile.emp_id}/face`}
-                  alt={profile.name}
-                  className="w-full h-full object-cover"
-                  onError={(e) => {
-                    (e.target as HTMLImageElement).style.display = 'none';
-                  }}
-                />
-              ) : (
-                <User size={48} />
-              )}
-            </div>
-            <h4 className="font-bold text-lg text-gray-900">{profile?.name}</h4>
-            <p className="text-sm text-gray-500">{profile?.emp_id}</p>
-          </div>
+          <h3 className="font-bold text-gray-900 mb-6 flex items-center gap-2">
+            <Calendar size={18} className="text-blue-600" /> Upcoming Holidays
+          </h3>
           <div className="space-y-4">
-            <div className="bg-gray-50 p-3 rounded-xl">
-              <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">Department</p>
-              <p className="font-medium text-gray-900">{profile?.department}</p>
-            </div>
-            <div className="bg-gray-50 p-3 rounded-xl">
-              <p className="text-xs text-gray-500 uppercase font-bold tracking-wider mb-1">Account Status</p>
-              <p className="font-medium text-green-600 flex items-center gap-1.5">
-                <CheckCircle size={14} /> Active
-              </p>
-            </div>
+            {upcomingHolidays.length === 0 && (
+              <p className="text-gray-400 text-sm italic text-center py-4">No upcoming holidays.</p>
+            )}
+            {upcomingHolidays.map((h: any) => (
+              <div key={h.id} className="p-4 rounded-2xl bg-gray-50 border border-gray-100">
+                <div className="flex justify-between items-start mb-1">
+                  <h4 className="font-bold text-gray-900 text-sm">{h.holiday_name}</h4>
+                  <span className="text-[10px] font-black uppercase text-blue-600 bg-blue-100 px-2 py-0.5 rounded-md">
+                    {h.type.split(' ')[0]}
+                  </span>
+                </div>
+                <p className="text-xs text-gray-500 font-medium">
+                  {new Date(h.start_date).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                </p>
+              </div>
+            ))}
           </div>
-          <button className="w-full mt-6 bg-blue-50 text-blue-600 font-bold py-3 rounded-xl hover:bg-blue-100 transition">
-            Edit Profile
-          </button>
+          
         </div>
       </div>
 
-
+      {/* ── Password Change Modal ── */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="bg-gradient-to-r from-purple-600 to-indigo-600 p-6 text-white flex justify-between items-center">
+              <h2 className="text-xl font-bold">Change Password</h2>
+              <button onClick={() => setShowPasswordModal(false)} className="text-white/80 hover:text-white transition">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handlePasswordChange} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">New Password</label>
+                <input
+                  required type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition"
+                  placeholder="••••••••"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Confirm Password</label>
+                <input
+                  required type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-purple-500 focus:border-purple-500 outline-none transition"
+                  placeholder="••••••••"
+                />
+              </div>
+              <div className="pt-2 flex gap-3">
+                <button type="button" onClick={() => setShowPasswordModal(false)}
+                  className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-200 transition">
+                  Cancel
+                </button>
+                <button type="submit"
+                  className="flex-1 bg-purple-600 text-white py-3 rounded-xl font-bold hover:bg-purple-700 transition shadow-lg shadow-purple-100">
+                  Update
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

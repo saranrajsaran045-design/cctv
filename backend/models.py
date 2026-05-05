@@ -38,3 +38,15 @@ class AttendanceLog(Base):
     camera_id   = Column(String(50))
 
     employee = relationship("Employee", back_populates="attendances")
+
+
+class Holiday(Base):
+    """Holiday Records"""
+    __tablename__ = "holidays"
+    id          = Column(Integer, primary_key=True, index=True)
+    holiday_name = Column(String(100), nullable=False)
+    start_date  = Column(DateTime, nullable=False)
+    end_date    = Column(DateTime, nullable=False)
+    type        = Column(String(50), nullable=False) # public, company, optional
+    description = Column(String(255))
+    created_at  = Column(DateTime, server_default=func.now())

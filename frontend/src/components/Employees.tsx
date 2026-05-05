@@ -1,5 +1,5 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { UserPlus, Upload, Search, X, Trash2, CheckCircle, Camera, SwitchCamera, Edit } from 'lucide-react';
+import { UserPlus, Upload, Search, X, Trash2, CheckCircle, Camera, SwitchCamera, Edit, Key, RotateCcw } from 'lucide-react';
 import api from '../api';
 
 interface Employee {
@@ -27,8 +27,14 @@ const Employees: React.FC = () => {
   
   // Edit Employee Form
   const [editingEmployee, setEditingEmployee] = useState<Employee | null>(null);
+  const [editEmpId, setEditEmpId] = useState('');
   const [editName, setEditName] = useState('');
   const [editDepartment, setEditDepartment] = useState('');
+  const [editCreatedAt, setEditCreatedAt] = useState('');
+  
+  // Password Change
+  const [passwordModalEmployee, setPasswordModalEmployee] = useState<Employee | null>(null);
+  const [newEmpPassword, setNewEmpPassword] = useState('');
 
   // File Upload
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -74,8 +80,10 @@ const Employees: React.FC = () => {
     if (!editingEmployee) return;
     try {
       await api.put(`/employees/${encodeURIComponent(editingEmployee.emp_id)}`, { 
+        emp_id: editEmpId,
         name: editName, 
-        department: editDepartment 
+        department: editDepartment,
+        created_at: editCreatedAt
       });
       setEditingEmployee(null);
       fetchEmployees();
@@ -97,6 +105,31 @@ const Employees: React.FC = () => {
       } else {
         alert(`Error deleting employee: ${error.response?.data?.detail || error.message}`);
       }
+    }
+  };
+
+  const handleResetPassword = async (empId: string) => {
+    if (!window.confirm(`Reset password for "${empId}" to default "123456"?`)) return;
+    try {
+      const res = await api.put(`/employees/${encodeURIComponent(empId)}/reset-password`, { new_password: null });
+      alert(res.data.message);
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Error resetting password');
+    }
+  };
+
+  const handleChangePassword = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!passwordModalEmployee) return;
+    try {
+      await api.put(`/employees/${encodeURIComponent(passwordModalEmployee.emp_id)}/change-password`, { 
+        new_password: newEmpPassword 
+      });
+      alert('Password updated successfully!');
+      setPasswordModalEmployee(null);
+      setNewEmpPassword('');
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Error changing password');
     }
   };
 
@@ -291,13 +324,32 @@ const Employees: React.FC = () => {
                     <button
                       onClick={() => {
                         setEditingEmployee(emp);
+                        setEditEmpId(emp.emp_id);
                         setEditName(emp.name);
                         setEditDepartment(emp.department);
+                        setEditCreatedAt(emp.created_at.split('T')[0]);
                       }}
                       className="text-amber-500 hover:text-amber-700 bg-amber-50 p-1.5 rounded transition"
                       title="Edit Employee"
                     >
                       <Edit size={16} />
+                    </button>
+                    <button
+                      onClick={() => {
+                        setPasswordModalEmployee(emp);
+                        setNewEmpPassword('');
+                      }}
+                      className="text-purple-500 hover:text-purple-700 bg-purple-50 p-1.5 rounded transition"
+                      title="Change Password"
+                    >
+                      <Key size={16} />
+                    </button>
+                    <button
+                      onClick={() => handleResetPassword(emp.emp_id)}
+                      className="text-cyan-500 hover:text-cyan-700 bg-cyan-50 p-1.5 rounded transition"
+                      title="Reset to Default Password"
+                    >
+                      <RotateCcw size={16} />
                     </button>
                     <button
                       onClick={() => handleDeleteEmployee(emp.emp_id)}
@@ -538,9 +590,11 @@ const Employees: React.FC = () => {
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Employee ID</label>
                 <input
-                  disabled type="text" value={editingEmployee.emp_id}
-                  className="w-full border border-gray-200 bg-gray-50 text-gray-500 rounded-lg px-4 py-2.5 cursor-not-allowed"
+                  required type="text" value={editEmpId} onChange={(e) => setEditEmpId(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500 font-mono"
+                  placeholder="e.g. EMP001"
                 />
+                <p className="text-[10px] text-amber-600 mt-1 font-bold italic">Changing ID will automatically rename face data folder.</p>
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
@@ -558,6 +612,13 @@ const Employees: React.FC = () => {
                   placeholder="Engineering"
                 />
               </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Joined Date</label>
+                <input
+                  required type="date" value={editCreatedAt} onChange={(e) => setEditCreatedAt(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500"
+                />
+              </div>
               <div className="pt-2 flex gap-3">
                 <button type="button" onClick={() => setEditingEmployee(null)}
                   className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-lg font-medium hover:bg-gray-200">
@@ -566,6 +627,43 @@ const Employees: React.FC = () => {
                 <button type="submit"
                   className="flex-1 bg-blue-600 text-white py-2.5 rounded-lg font-medium hover:bg-blue-700">
                   Update Employee
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+      {/* ── Change Password Modal ── */}
+      {passwordModalEmployee && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md p-6">
+            <div className="flex justify-between items-center mb-6">
+              <h2 className="text-xl font-bold text-gray-900">Set New Password</h2>
+              <button onClick={() => setPasswordModalEmployee(null)} className="text-gray-400 hover:text-gray-600">
+                <X size={20} />
+              </button>
+            </div>
+            <p className="text-sm text-gray-500 mb-4">
+              Updating password for: <span className="font-semibold text-gray-900">{passwordModalEmployee.name} ({passwordModalEmployee.emp_id})</span>
+            </p>
+            <form onSubmit={handleChangePassword} className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                <input
+                  required type="password" value={newEmpPassword} onChange={(e) => setNewEmpPassword(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-4 py-2.5 focus:ring-2 focus:ring-blue-500"
+                  placeholder="••••••••"
+                  autoFocus
+                />
+              </div>
+              <div className="pt-2 flex gap-3">
+                <button type="button" onClick={() => setPasswordModalEmployee(null)}
+                  className="flex-1 bg-gray-100 text-gray-700 py-2.5 rounded-lg font-medium hover:bg-gray-200">
+                  Cancel
+                </button>
+                <button type="submit"
+                  className="flex-1 bg-purple-600 text-white py-2.5 rounded-lg font-medium hover:bg-purple-700">
+                  Update Password
                 </button>
               </div>
             </form>

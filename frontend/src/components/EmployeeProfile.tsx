@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { User, Building, Shield, BadgeCheck, Camera, Calendar, XCircle, Upload } from 'lucide-react';
+import { User, Building, Shield, BadgeCheck, Camera, Calendar, XCircle, Upload, Key, X } from 'lucide-react';
 import api, { API_URL } from '../api';
 
 interface EmployeeProfileData {
@@ -16,6 +16,11 @@ const EmployeeProfile: React.FC = () => {
   const [showFaceModal, setShowFaceModal] = useState(false);
   const [uploadLoading, setUploadLoading] = useState(false);
   const [faceMode, setFaceMode] = useState<'file' | 'webcam'>('webcam');
+
+  // Password change state
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [newPassword, setNewPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
 
   // Webcam state
   const videoRef = React.useRef<HTMLVideoElement>(null);
@@ -41,6 +46,23 @@ const EmployeeProfile: React.FC = () => {
   useEffect(() => {
     fetchProfile();
   }, []);
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (newPassword !== confirmPassword) {
+      alert("Passwords do not match!");
+      return;
+    }
+    try {
+      await api.put('/employee/change-password', { new_password: newPassword });
+      alert('Password updated successfully!');
+      setShowPasswordModal(false);
+      setNewPassword('');
+      setConfirmPassword('');
+    } catch (error: any) {
+      alert(error.response?.data?.detail || 'Error updating password');
+    }
+  };
 
   const startCamera = React.useCallback(async () => {
     setCameraError('');
@@ -170,7 +192,7 @@ const EmployeeProfile: React.FC = () => {
         <div className="md:col-span-1 space-y-6">
           <div className="bg-white p-8 rounded-3xl shadow-sm border border-gray-100 text-center">
             <div className="relative inline-block mb-4">
-              <div className="w-32 h-32 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-3xl flex items-center justify-center text-white shadow-2xl overflow-hidden">
+              <div className="w-32 h-32 bg-gradient-to-tr from-blue-600 to-indigo-600 rounded-2xl mx-auto flex items-center justify-center text-white shadow-2xl overflow-hidden">
                 {profile?.has_face ? (
                   <img 
                     src={`${API_URL}/employees/${profile.emp_id}/face?v=${shotCount}`} 
@@ -269,8 +291,11 @@ const EmployeeProfile: React.FC = () => {
               <p className="text-sm text-gray-600">
                 You can change your portal password here. We recommend a strong password to protect your records.
               </p>
-              <button className="bg-gray-100 text-gray-700 px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-gray-200 transition">
-                Change Password
+              <button 
+                onClick={() => setShowPasswordModal(true)}
+                className="bg-gray-100 text-gray-700 px-6 py-2.5 rounded-xl text-sm font-bold hover:bg-gray-200 transition flex items-center gap-2"
+              >
+                <Key size={16} /> Change Password
               </button>
             </div>
           </div>
@@ -359,6 +384,49 @@ const EmployeeProfile: React.FC = () => {
                 </label>
               </div>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* ── Password Change Modal ── */}
+      {showPasswordModal && (
+        <div className="fixed inset-0 bg-black/50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-3xl shadow-2xl w-full max-w-md overflow-hidden">
+            <div className="bg-gradient-to-r from-blue-600 to-indigo-600 p-6 text-white flex justify-between items-center">
+              <h2 className="text-xl font-bold">Change Password</h2>
+              <button onClick={() => setShowPasswordModal(false)} className="text-white/80 hover:text-white transition">
+                <X size={24} />
+              </button>
+            </div>
+            <form onSubmit={handlePasswordChange} className="p-6 space-y-4">
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">New Password</label>
+                <input
+                  required type="password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                  placeholder="••••••••"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-bold text-gray-700 mb-1">Confirm Password</label>
+                <input
+                  required type="password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)}
+                  className="w-full border border-gray-200 rounded-xl px-4 py-3 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition"
+                  placeholder="••••••••"
+                />
+              </div>
+              <div className="pt-2 flex gap-3">
+                <button type="button" onClick={() => setShowPasswordModal(false)}
+                  className="flex-1 bg-gray-100 text-gray-700 py-3 rounded-xl font-bold hover:bg-gray-200 transition">
+                  Cancel
+                </button>
+                <button type="submit"
+                  className="flex-1 bg-blue-600 text-white py-3 rounded-xl font-bold hover:bg-blue-700 transition shadow-lg shadow-blue-100">
+                  Update
+                </button>
+              </div>
+            </form>
           </div>
         </div>
       )}

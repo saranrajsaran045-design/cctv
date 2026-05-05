@@ -10,21 +10,26 @@ interface AttendanceLog {
 
 const EmployeeReport: React.FC = () => {
   const [logs, setLogs] = useState<AttendanceLog[]>([]);
+  const [holidays, setHolidays] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [period, setPeriod] = useState('monthly');
 
   useEffect(() => {
-    const fetchLogs = async () => {
+    const fetchData = async () => {
       try {
-        const res = await api.get('/employee/my-attendance');
-        setLogs(res.data);
+        const [logsRes, holRes] = await Promise.all([
+          api.get('/employee/my-attendance'),
+          api.get('/holidays')
+        ]);
+        setLogs(logsRes.data);
+        setHolidays(holRes.data);
       } catch (err) {
-        console.error('Error fetching logs:', err);
+        console.error('Error fetching data:', err);
       } finally {
         setLoading(false);
       }
     };
-    fetchLogs();
+    fetchData();
   }, []);
 
   // Filter logs by period
@@ -44,9 +49,45 @@ const EmployeeReport: React.FC = () => {
     return true;
   });
 
-  const presentCount = new Set(filteredLogs.map(l => l.timestamp.split('T')[0])).size;
-  const totalDays = period === 'weekly' ? 7 : (period === 'monthly' ? 30 : presentCount);
-  const missedCount = Math.max(0, totalDays - presentCount);
+  const today = new Date().toISOString().split('T')[0];
+  
+  // Create a list of all days in the period to show absences
+  const allDaysInPeriod = [];
+  const now = new Date();
+  let startDate = new Date();
+  if (period === 'weekly') startDate.setDate(now.getDate() - 7);
+  else if (period === 'monthly') startDate.setDate(now.getDate() - 30);
+  else {
+    // For 'all', we just show days that have logs or are within the last 30 days for context
+    startDate.setDate(now.getDate() - 30);
+  }
+
+  const curr = new Date(startDate);
+  while (curr <= now) {
+    allDaysInPeriod.push(curr.toISOString().split('T')[0]);
+    curr.setDate(curr.getDate() + 1);
+  }
+
+  const presentDates = new Set(logs.map(l => l.timestamp.split('T')[0]));
+  
+  const holidayMap = holidays.reduce((acc: any, h) => {
+    const start = new Date(h.start_date);
+    const end = new Date(h.end_date);
+    const currH = new Date(start);
+    while (currH <= end) {
+      acc[currH.toISOString().split('T')[0]] = h;
+      currH.setDate(currH.getDate() + 1);
+    }
+    return acc;
+  }, {});
+
+  const missedCount = allDaysInPeriod.filter(date => {
+    const dayOfWeek = new Date(date).getDay();
+    const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+    return date < today && !presentDates.has(date) && !holidayMap[date] && !isWeekend;
+  }).length;
+
+  const presentCount = Array.from(presentDates).filter(d => allDaysInPeriod.includes(d)).length;
 
   return (
     <div className="space-y-6">
@@ -108,16 +149,19 @@ const EmployeeReport: React.FC = () => {
             </tr>
           </thead>
           <tbody className="divide-y divide-gray-50">
-            {Object.entries(
-              filteredLogs.reduce((acc: any, log) => {
-                const date = log.timestamp.split('T')[0];
-                if (!acc[date]) acc[date] = [];
-                acc[date].push(log);
-                return acc;
-              }, {})
-            ).sort((a, b) => b[0].localeCompare(a[0])).map(([date, dayLogs]: [string, any]) => {
+            {allDaysInPeriod.sort((a, b) => b.localeCompare(a)).map((date) => {
+              const dayLogs = logs.filter(l => l.timestamp.startsWith(date));
+              const isPresent = dayLogs.length > 0;
+              const holiday = holidayMap[date];
+              const dayOfWeek = new Date(date).getDay();
+              const isWeekend = dayOfWeek === 0 || dayOfWeek === 6;
+              const isPast = date < today;
+
+              if (!isPresent && !holiday && !isPast && !isWeekend) return null; // Future days
+              if (!isPresent && isWeekend && period === 'all') return null; // Skip non-marked weekends in 'all' view
+
               const sortedDayLogs = [...dayLogs].sort((a, b) => a.timestamp.localeCompare(b.timestamp));
-              const inTime = sortedDayLogs[0];
+              const inTime = isPresent ? sortedDayLogs[0] : null;
               const outTime = sortedDayLogs.length > 1 ? sortedDayLogs[sortedDayLogs.length - 1] : null;
               
               let workingHoursStr = "-";
@@ -127,33 +171,48 @@ const EmployeeReport: React.FC = () => {
                 const diffMins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
                 workingHoursStr = `${diffHrs}h ${diffMins}m`;
               }
-              
+
               return (
-                <tr key={date} className="hover:bg-gray-50 transition">
-                  <td className="px-6 py-4 font-medium text-gray-900">
-                    {new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' })}
-                  </td>
+                <tr key={date} className={`hover:bg-gray-50 transition ${holiday ? 'bg-blue-50/20' : (!isPresent && isPast && !isWeekend ? 'bg-red-50/20' : '')}`}>
                   <td className="px-6 py-4">
                     <div className="flex flex-col">
-                      <span className="text-gray-900 font-semibold flex items-center gap-1.5">
-                        <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                        In: {new Date(inTime.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      <span className="font-bold text-gray-900">
+                        {new Date(date).toLocaleDateString('en-US', { weekday: 'short', month: 'long', day: 'numeric' })}
                       </span>
-                      {outTime && (
-                        <span className="text-gray-500 text-xs flex items-center gap-1.5 mt-1">
-                          <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
-                          Out: {new Date(outTime.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
+                      {holiday && (
+                        <span className="text-[10px] text-blue-600 font-black uppercase tracking-wider">{holiday.holiday_name}</span>
+                      )}
+                      {!isPresent && isWeekend && (
+                         <span className="text-[10px] text-gray-400 font-black uppercase tracking-wider">Weekend</span>
                       )}
                     </div>
                   </td>
                   <td className="px-6 py-4">
+                    {isPresent ? (
+                      <div className="flex flex-col">
+                        <span className="text-gray-900 font-semibold flex items-center gap-1.5">
+                          <span className="w-2 h-2 bg-green-500 rounded-full"></span>
+                          In: {new Date(inTime.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
+                        {outTime && (
+                          <span className="text-gray-500 text-xs flex items-center gap-1.5 mt-1">
+                            <span className="w-2 h-2 bg-blue-500 rounded-full"></span>
+                            Out: {new Date(outTime.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="text-gray-400 italic">Not marked</span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4">
                     <div className="flex gap-1 flex-wrap">
-                      {Array.from(new Set(dayLogs.map((l: any) => l.camera_id))).map((cam: any) => (
+                      {isPresent && Array.from(new Set(dayLogs.map((l: any) => l.camera_id))).map((cam: any) => (
                         <span key={cam} className="px-2 py-0.5 bg-gray-100 text-gray-600 rounded text-[10px] font-bold">
                           {cam}
                         </span>
                       ))}
+                      {!isPresent && <span className="text-gray-300">-</span>}
                     </div>
                   </td>
                   <td className="px-6 py-4">
@@ -162,9 +221,33 @@ const EmployeeReport: React.FC = () => {
                     </span>
                   </td>
                   <td className="px-6 py-4 text-right">
-                    <span className="inline-flex items-center justify-center px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold">
-                      <CheckCircle size={14} className="mr-1" /> Present
-                    </span>
+                    {isPresent ? (
+                      holiday ? (
+                        <span className="inline-flex items-center justify-center px-3 py-1 bg-blue-100 text-blue-700 rounded-full text-xs font-bold border border-blue-200">
+                           Worked on Holiday
+                        </span>
+                      ) : (
+                        <span className="inline-flex items-center justify-center px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-bold border border-green-200">
+                          <CheckCircle size={14} className="mr-1" /> Present
+                        </span>
+                      )
+                    ) : (
+                      holiday ? (
+                        <span className="inline-flex items-center justify-center px-3 py-1 bg-blue-50 text-blue-600 rounded-full text-xs font-bold border border-blue-100">
+                           Holiday
+                        </span>
+                      ) : (
+                        isPast && !isWeekend ? (
+                          <span className="inline-flex items-center justify-center px-3 py-1 bg-red-100 text-red-700 rounded-full text-xs font-bold border border-red-200">
+                            <XCircle size={14} className="mr-1" /> Absent
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center justify-center px-3 py-1 bg-gray-100 text-gray-400 rounded-full text-xs font-bold border border-gray-200">
+                             - 
+                          </span>
+                        )
+                      )
+                    )}
                   </td>
                 </tr>
               );

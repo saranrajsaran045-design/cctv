@@ -1,6 +1,6 @@
 import React from 'react';
 import { NavLink, useNavigate } from 'react-router-dom';
-import { LayoutDashboard, Users, Camera, ClipboardList, LogOut, ScanFace } from 'lucide-react';
+import { LayoutDashboard, Users, Camera, ClipboardList, LogOut, ScanFace, Calendar } from 'lucide-react';
 
 interface SidebarProps {
   setIsAuthenticated: (auth: boolean) => void;
@@ -22,6 +22,7 @@ const Sidebar: React.FC<SidebarProps> = ({ setIsAuthenticated }) => {
     { to: '/webcam-attendance', icon: <ScanFace size={20} />, label: 'Mark Attendance' },
     { to: '/cameras', icon: <Camera size={20} />, label: 'CCTV Cameras' },
     { to: '/attendance', icon: <ClipboardList size={20} />, label: 'Attendance Logs' },
+    { to: '/holidays', icon: <Calendar size={20} />, label: 'Holidays' },
   ];
 
   return (

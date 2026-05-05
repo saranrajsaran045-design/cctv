@@ -20,6 +20,16 @@ import cctv_manager
 import face_engine
 from database import engine, get_db
 
+def is_holiday(db: Session, date_obj: date):
+    # Check if any holiday range covers this date
+    # Convert date to datetime for comparison
+    dt_start = datetime.combine(date_obj, datetime.min.time())
+    dt_end = datetime.combine(date_obj, datetime.max.time())
+    return db.query(models.Holiday).filter(
+        models.Holiday.start_date <= dt_end,
+        models.Holiday.end_date >= dt_start
+    ).first()
+
 # Create DB Tables
 models.Base.metadata.create_all(bind=engine)
 
@@ -96,6 +106,16 @@ def get_my_att(current_user=Depends(auth.get_current_user), db: Session = Depend
         raise HTTPException(status_code=403, detail="Not an employee")
     return db.query(models.AttendanceLog).filter(models.AttendanceLog.employee_id == current_user.id).order_by(models.AttendanceLog.timestamp.desc()).all()
 
+@app.put("/employee/change-password")
+def employee_change_password(data: schemas.EmployeePasswordChange, current_user=Depends(auth.get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != "employee":
+        raise HTTPException(status_code=403, detail="Not an employee")
+    
+    # current_user is the employee object
+    current_user.hashed_password = auth.get_password_hash(data.new_password)
+    db.commit()
+    return {"status": "ok", "message": "Password updated successfully"}
+
 # CRITICAL: Attendance Management
 @app.get("/attendance", response_model=List[schemas.AttendanceLogResponse])
 def get_att(period: Optional[str] = "all", db: Session = Depends(get_db)):
@@ -156,12 +176,62 @@ def update_emp(emp_id: str, employee_update: schemas.EmployeeUpdate, db: Session
     emp = db.query(models.Employee).filter(models.Employee.emp_id == emp_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
+    
+    # Handle Employee ID change
+    if employee_update.emp_id and employee_update.emp_id != emp.emp_id:
+        # Check if new ID already exists
+        exists = db.query(models.Employee).filter(models.Employee.emp_id == employee_update.emp_id).first()
+        if exists:
+            raise HTTPException(status_code=400, detail="New Employee ID already exists")
+            
+        # Rename face directory if it exists
+        old_dir = os.path.join(face_engine.FACES_DB_PATH, emp.emp_id)
+        new_dir = os.path.join(face_engine.FACES_DB_PATH, employee_update.emp_id)
+        if os.path.exists(old_dir):
+            try:
+                os.rename(old_dir, new_dir)
+            except Exception as e:
+                print(f"Error renaming directory: {e}")
+                # We still proceed with DB update if renaming fails for some reason (e.g. permission)
+        
+        emp.emp_id = employee_update.emp_id
+
     if employee_update.name:
         emp.name = employee_update.name
     if employee_update.department:
         emp.department = employee_update.department
+    if employee_update.created_at:
+        emp.created_at = employee_update.created_at
+
     db.commit()
     return {"status": "ok"}
+
+@app.put("/employees/{emp_id}/reset-password")
+def reset_emp_password(emp_id: str, data: schemas.EmployeePasswordReset, current_user=Depends(auth.get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can reset passwords")
+    
+    emp = db.query(models.Employee).filter(models.Employee.emp_id == emp_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    new_password = data.new_password if data.new_password else "123456" # Default reset password
+    emp.hashed_password = auth.get_password_hash(new_password)
+    db.commit()
+    return {"status": "ok", "message": f"Password reset successfully to: {new_password}" if not data.new_password else "Password reset successfully"}
+
+@app.put("/employees/{emp_id}/change-password")
+def change_emp_password(emp_id: str, data: schemas.EmployeePasswordChange, current_user=Depends(auth.get_current_user), db: Session = Depends(get_db)):
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can change passwords")
+    
+    emp = db.query(models.Employee).filter(models.Employee.emp_id == emp_id).first()
+    if not emp:
+        raise HTTPException(status_code=404, detail="Employee not found")
+    
+    emp.hashed_password = auth.get_password_hash(data.new_password)
+    db.commit()
+    return {"status": "ok", "message": "Password updated successfully"}
 
 @app.delete("/employees/{emp_id}")
 def delete_emp(emp_id: str, db: Session = Depends(get_db)):
@@ -262,6 +332,8 @@ async def webcam(file: UploadFile = File(...), expected_id: Optional[str] = Form
     
     # Logic for In-Time and Out-Time
     today = date.today()
+    holiday = is_holiday(db, today)
+    
     logs_today = db.query(models.AttendanceLog).filter(
         models.AttendanceLog.employee_id == emp.id,
         models.AttendanceLog.timestamp >= datetime.combine(today, datetime.min.time()),
@@ -275,7 +347,8 @@ async def webcam(file: UploadFile = File(...), expected_id: Optional[str] = Form
             "name": emp.name,
             "emp_id": emp.emp_id,
             "department": emp.department,
-            "timestamp": logs_today[0].timestamp.isoformat()
+            "timestamp": logs_today[0].timestamp.isoformat(),
+            "is_holiday": holiday is not None
         }
         
     if type == "out":
@@ -288,22 +361,28 @@ async def webcam(file: UploadFile = File(...), expected_id: Optional[str] = Form
                 "name": emp.name,
                 "emp_id": emp.emp_id,
                 "department": emp.department,
-                "timestamp": logs_today[-1].timestamp.isoformat()
+                "timestamp": logs_today[-1].timestamp.isoformat(),
+                "is_holiday": holiday is not None
             }
-        
         
     log = models.AttendanceLog(employee_id=emp.id, camera_id="webcam", timestamp=datetime.now())
     db.add(log)
     db.commit()
     db.refresh(log)
     
+    msg = f"Welcome, {emp.name}!"
+    if holiday:
+        msg = f"Logged in on Holiday ({holiday.holiday_name}): {emp.name}"
+    
     return {
         "status": "success",
-        "message": f"Welcome, {emp.name}!",
+        "message": msg,
         "name": emp.name,
         "emp_id": emp.emp_id,
         "department": emp.department,
-        "timestamp": log.timestamp.isoformat()
+        "timestamp": log.timestamp.isoformat(),
+        "is_holiday": holiday is not None,
+        "holiday_name": holiday.holiday_name if holiday else None
     }
 
 @app.get("/cameras/active")
@@ -318,4 +397,52 @@ def stream(camera_id: str):
             if f: yield (b'--frame\r\nContent-Type: image/jpeg\r\n\r\n' + f + b'\r\n')
             else: time.sleep(0.1)
     return StreamingResponse(gen(), media_type="multipart/x-mixed-replace; boundary=frame")
+
+
+# --- HOLIDAY ENDPOINTS ---
+
+@app.get("/holidays", response_model=List[schemas.HolidayResponse])
+def get_holidays(db: Session = Depends(get_db)):
+    return db.query(models.Holiday).order_by(models.Holiday.start_date.asc()).all()
+
+@app.post("/holidays", response_model=schemas.HolidayResponse)
+def create_holiday(holiday: schemas.HolidayCreate, db: Session = Depends(get_db)):
+    if holiday.start_date > holiday.end_date:
+        raise HTTPException(status_code=400, detail="Start date cannot be after end date")
+        
+    new_holiday = models.Holiday(**holiday.dict())
+    db.add(new_holiday)
+    db.commit()
+    db.refresh(new_holiday)
+    return new_holiday
+
+@app.put("/holidays/{holiday_id}", response_model=schemas.HolidayResponse)
+def update_holiday(holiday_id: int, holiday_update: schemas.HolidayUpdate, db: Session = Depends(get_db)):
+    db_holiday = db.query(models.Holiday).filter(models.Holiday.id == holiday_id).first()
+    if not db_holiday:
+        raise HTTPException(status_code=404, detail="Holiday not found")
+    
+    update_data = holiday_update.dict(exclude_unset=True)
+    
+    # Validation if dates are being updated
+    current_start = update_data.get('start_date', db_holiday.start_date)
+    current_end = update_data.get('end_date', db_holiday.end_date)
+    if current_start > current_end:
+        raise HTTPException(status_code=400, detail="Start date cannot be after end date")
+
+    for key, value in update_data.items():
+        setattr(db_holiday, key, value)
+    
+    db.commit()
+    db.refresh(db_holiday)
+    return db_holiday
+
+@app.delete("/holidays/{holiday_id}")
+def delete_holiday(holiday_id: int, db: Session = Depends(get_db)):
+    db_holiday = db.query(models.Holiday).filter(models.Holiday.id == holiday_id).first()
+    if not db_holiday:
+        raise HTTPException(status_code=404, detail="Holiday not found")
+    db.delete(db_holiday)
+    db.commit()
+    return {"status": "ok"}
 

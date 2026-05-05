@@ -16,6 +16,7 @@ interface AttendanceLog {
 
 const Attendance: React.FC = () => {
   const [logs, setLogs] = useState<AttendanceLog[]>([]);
+  const [holidays, setHolidays] = useState<any[]>([]);
   const [period, setPeriod] = useState<'all' | 'daily' | 'weekly' | 'monthly'>('all');
   const [editingLog, setEditingLog] = useState<AttendanceLog | null>(null);
   const [editTimestamp, setEditTimestamp] = useState('');
@@ -23,8 +24,12 @@ const Attendance: React.FC = () => {
 
   const fetchLogs = async () => {
     try {
-      const res = await api.get('/attendance', { params: { period } });
-      setLogs(res.data);
+      const [logsRes, holRes] = await Promise.all([
+        api.get('/attendance', { params: { period } }),
+        api.get('/holidays')
+      ]);
+      setLogs(logsRes.data);
+      setHolidays(holRes.data);
     } catch (error) {
       console.error(error);
     }
@@ -145,12 +150,25 @@ const Attendance: React.FC = () => {
                   workingHoursStr = `${diffHrs}h ${diffMins}m`;
                 }
 
+                const holiday = holidays.find(h => {
+                  const start = h.start_date.split('T')[0];
+                  const end = h.end_date.split('T')[0];
+                  return group.date >= start && group.date <= end;
+                });
+
                 return (
-                  <tr key={`${group.date}_${idx}`} className="hover:bg-blue-50/30 transition-colors group">
+                  <tr key={`${group.date}_${idx}`} className={`hover:bg-blue-50/30 transition-colors group ${holiday ? 'bg-orange-50/20' : ''}`}>
                     <td className="p-6">
-                      <span className="text-gray-900 font-bold">
-                        {new Date(group.date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
-                      </span>
+                      <div className="flex flex-col">
+                        <span className="text-gray-900 font-bold">
+                          {new Date(group.date).toLocaleDateString([], { month: 'short', day: 'numeric', year: 'numeric' })}
+                        </span>
+                        {holiday && (
+                          <span className="text-[10px] text-orange-600 font-black uppercase tracking-tighter">
+                            {holiday.holiday_name}
+                          </span>
+                        )}
+                      </div>
                     </td>
                     <td className="p-6">
                       {group.employee ? (
@@ -216,10 +234,17 @@ const Attendance: React.FC = () => {
                       </span>
                     </td>
                     <td className="p-6">
-                      <span className="bg-green-100 text-green-700 px-4 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-sm border border-green-200">
-                        <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-                        Present
-                      </span>
+                      {holiday ? (
+                        <span className="bg-orange-100 text-orange-700 px-4 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-sm border border-orange-200">
+                          <CheckCircle size={12} />
+                          Worked on Holiday
+                        </span>
+                      ) : (
+                        <span className="bg-green-100 text-green-700 px-4 py-1.5 rounded-xl text-xs font-bold inline-flex items-center gap-1.5 shadow-sm border border-green-200">
+                          <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
+                          Present
+                        </span>
+                      )}
                     </td>
                   </tr>
                 );

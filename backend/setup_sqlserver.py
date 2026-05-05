@@ -30,6 +30,7 @@ cursor = conn.cursor()
 statements = [
     # Drop in reverse order (child first)
     "IF OBJECT_ID('attendance_logs', 'U') IS NOT NULL DROP TABLE attendance_logs",
+    "IF OBJECT_ID('holidays', 'U') IS NOT NULL DROP TABLE holidays",
     "IF OBJECT_ID('employees', 'U') IS NOT NULL DROP TABLE employees",
     "IF OBJECT_ID('users', 'U') IS NOT NULL DROP TABLE users",
 
@@ -68,10 +69,24 @@ statements = [
     )
     """,
 
+    # Create holidays table
+    """
+    CREATE TABLE holidays (
+        id INT IDENTITY(1,1) PRIMARY KEY,
+        holiday_name NVARCHAR(100) NOT NULL,
+        start_date DATETIME2 NOT NULL,
+        end_date DATETIME2 NOT NULL,
+        type NVARCHAR(50) NOT NULL,
+        description NVARCHAR(255),
+        created_at DATETIME2 DEFAULT SYSDATETIME()
+    )
+    """,
+
     # Indexes
     "CREATE INDEX IDX_emp_id ON employees(emp_id)",
     "CREATE INDEX IDX_att_time ON attendance_logs(timestamp)",
     "CREATE INDEX IDX_att_emp ON attendance_logs(employee_id)",
+    "CREATE INDEX IDX_hol_start ON holidays(start_date)",
 ]
 
 for stmt in statements:

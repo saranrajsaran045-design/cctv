@@ -11,6 +11,7 @@ import Employees from './components/Employees';
 import Cameras from './components/Cameras';
 import Attendance from './components/Attendance';
 import WebcamAttendance from './components/WebcamAttendance';
+import HolidayManagement from './components/HolidayManagement';
 
 const PrivateRoute = ({ children }: { children: React.ReactNode }) => {
   const token = localStorage.getItem('token');
@@ -61,6 +62,7 @@ function App() {
                           <Route path="/employees" element={<Employees />} />
                           <Route path="/cameras" element={<Cameras />} />
                           <Route path="/attendance" element={<Attendance />} />
+                          <Route path="/holidays" element={<HolidayManagement />} />
                         </>
                       ) : (
                         <>

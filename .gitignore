@@ -1,17 +1,8 @@
-# Python
 venv/
+backend/venv/
 __pycache__/
 *.pyc
-
-# Database
-*.db
-
-# Images (optional)
-*.jpg
-*.png
-
-# Node
 node_modules/
-
-# Env
 .env
+dist/
+build/

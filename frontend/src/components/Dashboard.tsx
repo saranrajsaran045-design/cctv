@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react';
-import { Users, Camera, ClipboardList, XCircle, Edit2 } from 'lucide-react';
+import { Users, Camera, ClipboardList, XCircle, Edit2, Calendar } from 'lucide-react';
 import api from '../api';
 
 const Dashboard: React.FC = () => {
@@ -9,16 +9,18 @@ const Dashboard: React.FC = () => {
     todayAttendance: 0
   });
   const [allLogs, setAllLogs] = useState<any[]>([]);
+  const [holidays, setHolidays] = useState<any[]>([]);
   const [editingRow, setEditingRow] = useState<any>(null);
   const [editTimestamp, setEditTimestamp] = useState('');
   const [isDeletingId, setIsDeletingId] = useState<number | null>(null);
 
   const fetchStats = async () => {
     try {
-      const [empRes, camRes, attRes] = await Promise.all([
+      const [empRes, camRes, attRes, holRes] = await Promise.all([
         api.get('/employees'),
         api.get('/cameras/active'),
-        api.get('/attendance')
+        api.get('/attendance'),
+        api.get('/holidays')
       ]);
       
       const today = new Date().toISOString().split('T')[0];
@@ -30,6 +32,7 @@ const Dashboard: React.FC = () => {
         todayAttendance: todayCount
       });
       setAllLogs(attRes.data);
+      setHolidays(holRes.data);
     } catch (error) {
       console.error("Error fetching stats", error);
     }
@@ -40,6 +43,18 @@ const Dashboard: React.FC = () => {
     const interval = setInterval(fetchStats, 10000);
     return () => clearInterval(interval);
   }, []);
+
+  const today = new Date().toISOString().split('T')[0];
+  const todayHoliday = holidays.find(h => {
+    const start = h.start_date.split('T')[0];
+    const end = h.end_date.split('T')[0];
+    return today >= start && today <= end;
+  });
+
+  const upcomingHolidays = holidays
+    .filter(h => new Date(h.start_date) > new Date())
+    .sort((a, b) => a.start_date.localeCompare(b.start_date))
+    .slice(0, 3);
 
   const handleUpdate = async () => {
     if (!editingRow) return;
@@ -104,7 +119,23 @@ const Dashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="mt-8 bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 mt-8">
+        <div className="lg:col-span-2">
+          {todayHoliday && (
+            <div className="mb-6 bg-gradient-to-r from-orange-500 to-red-600 rounded-3xl p-8 text-white shadow-xl shadow-orange-200 animate-pulse">
+              <div className="flex items-center gap-4">
+                <div className="bg-white/20 p-4 rounded-2xl">
+                  <Calendar size={32} />
+                </div>
+                <div>
+                  <h2 className="text-2xl font-black">Today is a Holiday!</h2>
+                  <p className="text-orange-50 opacity-90 font-bold">{todayHoliday.holiday_name} ({todayHoliday.type})</p>
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
         <div className="p-6 border-b border-gray-50 flex justify-between items-center bg-gray-50/30">
           <h3 className="font-bold text-gray-800 flex items-center gap-2">
             <ClipboardList size={18} className="text-blue-600" /> Today's Live Presence
@@ -202,6 +233,40 @@ const Dashboard: React.FC = () => {
               )}
             </tbody>
           </table>
+        </div>
+        </div>
+        </div>
+
+        <div className="space-y-6">
+          <div className="bg-white rounded-3xl shadow-sm border border-gray-100 p-6">
+            <h3 className="font-bold text-gray-900 mb-6 flex items-center gap-2">
+              <Calendar size={18} className="text-orange-500" /> Upcoming Holidays
+            </h3>
+            <div className="space-y-4">
+              {upcomingHolidays.length === 0 && (
+                <p className="text-gray-400 text-sm italic text-center py-4">No upcoming holidays.</p>
+              )}
+              {upcomingHolidays.map((h: any) => (
+                <div key={h.id} className="p-4 rounded-2xl bg-gray-50 border border-gray-100 hover:border-orange-200 transition-colors">
+                  <div className="flex justify-between items-start mb-1">
+                    <h4 className="font-bold text-gray-900 text-sm">{h.holiday_name}</h4>
+                    <span className="text-[9px] font-black uppercase text-orange-600 bg-orange-100 px-2 py-0.5 rounded-md">
+                      {h.type.split(' ')[0]}
+                    </span>
+                  </div>
+                  <p className="text-xs text-gray-500 font-medium">
+                    {new Date(h.start_date).toLocaleDateString([], { month: 'short', day: 'numeric' })}
+                  </p>
+                </div>
+              ))}
+              <button 
+                onClick={() => window.location.href='/holidays'}
+                className="w-full py-3 text-sm font-bold text-blue-600 hover:bg-blue-50 rounded-xl transition mt-2 border border-blue-100"
+              >
+                Manage All Holidays
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

@@ -11,8 +11,17 @@ class EmployeeCreate(EmployeeBase):
     password: str
 
 class EmployeeUpdate(BaseModel):
+    emp_id: Optional[str] = None
     name: Optional[str] = None
     department: Optional[str] = None
+    created_at: Optional[datetime] = None
+
+class EmployeePasswordChange(BaseModel):
+    new_password: str
+
+class EmployeePasswordReset(BaseModel):
+    # Optional if we want to force a specific one, but usually admin just sets a new one
+    new_password: Optional[str] = None
 
 class EmployeeResponse(EmployeeBase):
     id: int
@@ -52,3 +61,26 @@ class User(BaseModel):
 
 class UserInDB(User):
     hashed_password: str
+
+class HolidayBase(BaseModel):
+    holiday_name: str
+    start_date: datetime
+    end_date: datetime
+    type: str
+    description: Optional[str] = None
+
+class HolidayCreate(HolidayBase):
+    pass
+
+class HolidayUpdate(BaseModel):
+    holiday_name: Optional[str] = None
+    start_date: Optional[datetime] = None
+    end_date: Optional[datetime] = None
+    type: Optional[str] = None
+    description: Optional[str] = None
+
+class HolidayResponse(HolidayBase):
+    id: int
+    created_at: datetime
+    class Config:
+        from_attributes = True
