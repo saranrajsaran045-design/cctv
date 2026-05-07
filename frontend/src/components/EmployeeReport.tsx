@@ -52,7 +52,7 @@ const EmployeeReport: React.FC = () => {
   const today = new Date().toISOString().split('T')[0];
   
   // Create a list of all days in the period to show absences
-  const allDaysInPeriod = [];
+  const allDaysInPeriod: string[] = [];
   const now = new Date();
   let startDate = new Date();
   if (period === 'weekly') startDate.setDate(now.getDate() - 7);
@@ -192,7 +192,7 @@ const EmployeeReport: React.FC = () => {
                       <div className="flex flex-col">
                         <span className="text-gray-900 font-semibold flex items-center gap-1.5">
                           <span className="w-2 h-2 bg-green-500 rounded-full"></span>
-                          In: {new Date(inTime.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          In: {new Date(inTime!.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                         </span>
                         {outTime && (
                           <span className="text-gray-500 text-xs flex items-center gap-1.5 mt-1">

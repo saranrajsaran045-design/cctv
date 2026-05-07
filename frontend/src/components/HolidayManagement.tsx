@@ -88,7 +88,7 @@ const HolidayManagement: React.FC = () => {
 
   const { firstDay, days } = getDaysInMonth(currentMonth);
   const daysArray = Array.from({ length: days }, (_, i) => i + 1);
-  const padding = Array.from({ length: firstDay }, (_, i) => null);
+  const padding = Array.from({ length: firstDay }, () => null);
 
   const isDateHoliday = (day: number) => {
     const d = new Date(currentMonth.getFullYear(), currentMonth.getMonth(), day);

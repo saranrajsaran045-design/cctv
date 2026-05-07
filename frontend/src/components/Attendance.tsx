@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Download, Calendar, Filter, XCircle, Edit2 } from 'lucide-react';
+import { Download, Calendar, Filter, XCircle, Edit2, CheckCircle } from 'lucide-react';
 import api, { API_URL } from '../api';
 
 interface AttendanceLog {

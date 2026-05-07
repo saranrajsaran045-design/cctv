@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react';
-import { User, Calendar, Clock, AlertCircle, CheckCircle, LogIn, LogOut, ChevronLeft, ChevronRight, Key, X } from 'lucide-react';
+import { User, Calendar, Clock, AlertCircle, CheckCircle, LogIn, LogOut, ChevronLeft, ChevronRight, X } from 'lucide-react';
 import { useNavigate } from 'react-router-dom';
-import api, { API_URL } from '../api';
+import api from '../api';
 
 interface EmployeeProfile {
   emp_id: string;
