@@ -37,6 +37,9 @@ app = FastAPI(title="CCTV Attendance System")
 
 @app.on_event("startup")
 def startup_populate_db():
+    # Ensure face database directory exists
+    os.makedirs("faces_db", exist_ok=True)
+    
     db = next(get_db())
     # Create admin user if it doesn't exist
     admin = db.query(models.User).filter(models.User.username == "admin").first()
