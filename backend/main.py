@@ -359,23 +359,37 @@ async def webcam(file: UploadFile = File(...), expected_id: Optional[str] = Form
         return {"status": "none", "message": "Face not recognized"}
     
     best = min(matches, key=lambda m: m["distance"])
+    recognized_id = best["emp_id"].strip().lower()
     
-    # NEW: Security check for Employee Login
-    if expected_id and best["emp_id"] != expected_id:
-        # Check if the expected_id exists in DB to be safe
-        target_emp = db.query(models.Employee).filter(models.Employee.emp_id == expected_id).first()
-        return {
-            "status": "failed", 
-            "message": f"Identity Mismatch! This camera is strictly for {target_emp.name if target_emp else expected_id}.",
-            "name": best["emp_id"], # Show who was actually seen
-            "expected": expected_id
-        }
+    # NEW: Handle UNKNOWN faces (when AI fails to match or DeepFace is offline)
+    if recognized_id == "unknown":
+        return {"status": "none", "message": "Face detected, but not recognized. Please ensure good lighting or contact admin."}
+    
+    # NEW: Security check for Employee Login (Case-insensitive)
+    if expected_id:
+        target_id = expected_id.strip().lower()
+        if recognized_id != target_id:
+            target_emp = db.query(models.Employee).filter(models.Employee.emp_id.ilike(expected_id)).first()
+            return {
+                "status": "failed", 
+                "message": f"Identity Mismatch! This camera is strictly for {target_emp.name if target_emp else expected_id}.",
+                "name": best["emp_id"], 
+                "expected": expected_id
+            }
 
     # Clean up the recognized ID and search case-insensitively
     rec_id = best["emp_id"].strip()
     emp = db.query(models.Employee).filter(models.Employee.emp_id.ilike(rec_id)).first()
+    if not emp:
+        # Fallback: try stripping all non-alphanumeric just in case
+        all_emps = db.query(models.Employee).all()
+        for e in all_emps:
+            if e.emp_id.strip().lower() == rec_id.lower():
+                emp = e
+                break
+                
     if not emp: 
-        return {"status": "none", "message": "Employee record not found"}
+        return {"status": "none", "message": f"Employee record not found for ID: {rec_id}"}
     
     # Logic for In-Time and Out-Time
     today = date.today()
