@@ -361,7 +361,9 @@ async def webcam(file: UploadFile = File(...), expected_id: Optional[str] = Form
             "expected": expected_id
         }
 
-    emp = db.query(models.Employee).filter(models.Employee.emp_id == best["emp_id"]).first()
+    # Clean up the recognized ID and search case-insensitively
+    rec_id = best["emp_id"].strip()
+    emp = db.query(models.Employee).filter(models.Employee.emp_id.ilike(rec_id)).first()
     if not emp: 
         return {"status": "none", "message": "Employee record not found"}
     
