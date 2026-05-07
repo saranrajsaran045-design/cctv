@@ -1,31 +1,37 @@
 import os
 os.environ["TF_USE_LEGACY_KERAS"] = "1"
 import cv2
-import time
 import numpy as np
-
+import pickle
 import logging
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-# Try to import DeepFace, but provide a fallback if it fails due to environment issues
-try:
-    from deepface import DeepFace
-    DEEPFACE_AVAILABLE = True
-    logger.info("DeepFace successfully loaded (TF 2.15.0 environment).")
-except ImportError as e:
-    logger.error(f"DeepFace could not be loaded (Environment/DLL issue): {e}")
-    DEEPFACE_AVAILABLE = False
-except Exception as e:
-    logger.error(f"An unexpected error occurred while loading DeepFace: {e}")
-    DEEPFACE_AVAILABLE = False
-
 FACES_DB_PATH = os.path.abspath("faces_db")
+RECOGNIZER_PATH = os.path.join(FACES_DB_PATH, "lbph_model.yml")
+LABELS_PATH = os.path.join(FACES_DB_PATH, "labels.pkl")
 
 if not os.path.exists(FACES_DB_PATH):
     os.makedirs(FACES_DB_PATH)
+
+# Face detector (lightweight, always available)
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
+
+# LBPH Face Recognizer (lightweight, works in 512MB RAM)
+recognizer = cv2.face.LBPHFaceRecognizer_create(
+    radius=2,
+    neighbors=16,
+    grid_x=8,
+    grid_y=8,
+    threshold=80.0  # Lower = stricter matching
+)
+
+# Label mapping: numeric label -> emp_id
+label_map = {}
+is_trained = False
+
 
 def sync_faces_from_db(employees_with_faces):
     """
@@ -34,6 +40,8 @@ def sync_faces_from_db(employees_with_faces):
     """
     logger.info(f"SYNC: Restoring faces for {len(employees_with_faces)} employees...")
     for emp in employees_with_faces:
+        if not emp.faces:
+            continue
         emp_dir = os.path.join(FACES_DB_PATH, emp.emp_id)
         os.makedirs(emp_dir, exist_ok=True)
         
@@ -43,94 +51,155 @@ def sync_faces_from_db(employees_with_faces):
                 with open(image_path, "wb") as f:
                     f.write(face.image_data)
     
-    # Invalidate cache after restore
-    pkl_path = os.path.join(FACES_DB_PATH, "representations_vgg_face.pkl")
-    if os.path.exists(pkl_path):
-        os.remove(pkl_path)
     logger.info("SYNC: Face database restoration complete.")
+    # Retrain the model after restoring
+    train_recognizer()
+
+
+def train_recognizer():
+    """
+    Trains the LBPH recognizer using all face images in faces_db.
+    This is lightweight and fast (~1-2 seconds for 50 images).
+    """
+    global label_map, is_trained
+    
+    faces = []
+    labels = []
+    label_map = {}
+    current_label = 0
+    
+    if not os.path.exists(FACES_DB_PATH):
+        logger.warning("faces_db directory does not exist.")
+        is_trained = False
+        return
+    
+    for emp_id in os.listdir(FACES_DB_PATH):
+        emp_dir = os.path.join(FACES_DB_PATH, emp_id)
+        if not os.path.isdir(emp_dir):
+            continue
+            
+        images_found = False
+        for img_file in os.listdir(emp_dir):
+            if not img_file.lower().endswith(('.jpg', '.jpeg', '.png')):
+                continue
+                
+            img_path = os.path.join(emp_dir, img_file)
+            img = cv2.imread(img_path, cv2.IMREAD_GRAYSCALE)
+            if img is None:
+                continue
+            
+            # Detect face in the registered image
+            detected_faces = face_cascade.detectMultiScale(img, 1.1, 4, minSize=(50, 50))
+            
+            if len(detected_faces) > 0:
+                (x, y, w, h) = detected_faces[0]
+                face_roi = img[y:y+h, x:x+w]
+                face_roi = cv2.resize(face_roi, (200, 200))
+                faces.append(face_roi)
+                labels.append(current_label)
+                images_found = True
+            else:
+                # If no face detected, use the whole image (resized)
+                face_roi = cv2.resize(img, (200, 200))
+                faces.append(face_roi)
+                labels.append(current_label)
+                images_found = True
+        
+        if images_found:
+            label_map[current_label] = emp_id
+            current_label += 1
+    
+    if len(faces) == 0:
+        logger.warning("TRAIN: No face images found to train on.")
+        is_trained = False
+        return
+    
+    logger.info(f"TRAIN: Training LBPH with {len(faces)} images across {len(label_map)} employees...")
+    recognizer.train(faces, np.array(labels))
+    
+    # Save model and labels
+    try:
+        recognizer.save(RECOGNIZER_PATH)
+        with open(LABELS_PATH, 'wb') as f:
+            pickle.dump(label_map, f)
+    except Exception as e:
+        logger.error(f"TRAIN: Could not save model: {e}")
+    
+    is_trained = True
+    logger.info(f"TRAIN: Model trained successfully! Labels: {label_map}")
+
 
 def recognize_face(frame_np):
     """
-    Recognizes faces in a given frame.
+    Recognizes faces in a given frame using LBPH.
     Returns a list of dicts with 'emp_id' and 'bbox'.
     """
-    if not DEEPFACE_AVAILABLE:
-        # Fallback: Simple face detection without recognition to keep the system "alive"
-        # We'll use OpenCV's built-in Haar Cascades which don't require TensorFlow
-        face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + 'haarcascade_frontalface_default.xml')
-        gray = cv2.cvtColor(frame_np, cv2.COLOR_BGR2GRAY)
-        faces = face_cascade.detectMultiScale(gray, 1.1, 4)
+    global is_trained, label_map
+    
+    # Try loading saved model if not trained yet
+    if not is_trained:
+        if os.path.exists(RECOGNIZER_PATH) and os.path.exists(LABELS_PATH):
+            try:
+                recognizer.read(RECOGNIZER_PATH)
+                with open(LABELS_PATH, 'rb') as f:
+                    label_map = pickle.load(f)
+                is_trained = True
+                logger.info(f"LOADED saved LBPH model with labels: {label_map}")
+            except Exception as e:
+                logger.error(f"Failed to load saved model: {e}")
         
-        results = []
-        for (x, y, w, h) in faces:
-            results.append({
-                "emp_id": "UNKNOWN",
-                "bbox": (int(x), int(y), int(w), int(h)),
-                "distance": 0
-            })
-        return results
-
-    try:
-        # DeepFace.find returns a list of dataframes (one for each face detected in the frame)
-        logger.info(f"Recognition attempt started...")
-        dfs = DeepFace.find(
-            img_path=frame_np,
-            db_path=FACES_DB_PATH,
-            model_name="VGG-Face",
-            detector_backend="opencv", # Revert to opencv for speed
-            enforce_detection=False,
-            align=True,
-            silent=True
-        )
+        if not is_trained:
+            # Try training from scratch
+            train_recognizer()
         
-        results = []
-        THRESHOLD = 0.50
-        
-        if not dfs:
-            logger.warning("No detection results returned by DeepFace.")
+        if not is_trained:
+            logger.warning("No trained model available. Returning empty.")
             return []
-
-        for i, df in enumerate(dfs):
-            if not df.empty:
-                match = df.iloc[0]
-                distance = float(match['distance'])
-                identity = str(match['identity'])
-                
-                logger.info(f"Face {i} matched with {identity} (Distance: {distance:.4f})")
-                
-                if distance < THRESHOLD:
-                    identity_path = os.path.normpath(identity)
-                    parts = identity_path.split(os.sep)
-                    
-                    if len(parts) >= 2:
-                        emp_id = parts[-2]
-                        if emp_id == "faces_db" and len(parts) >= 3:
-                            emp_id = parts[-3]
-
-                        x = int(match['source_x'])
-                        y = int(match['source_y'])
-                        w = int(match['source_w'])
-                        h = int(match['source_h'])
-                        
-                        logger.info(f"SUCCESS: Recognized Employee ID: '{emp_id}'")
-                        
-                        results.append({
-                            "emp_id": emp_id,
-                            "bbox": (x, y, w, h),
-                            "distance": distance
-                        })
-                else:
-                    logger.info(f"MATCH FAILED: Distance {distance:.4f} > {THRESHOLD}")
-            else:
-                logger.info(f"DETECTION INFO: Face {i} detected but no match found.")
-        return results
-    except Exception as e:
-        logger.error(f"CRITICAL ERROR in face recognition: {e}")
+    
+    # Convert to grayscale for detection
+    gray = cv2.cvtColor(frame_np, cv2.COLOR_BGR2GRAY)
+    
+    # Detect faces
+    detected_faces = face_cascade.detectMultiScale(
+        gray, 
+        scaleFactor=1.1, 
+        minNeighbors=5, 
+        minSize=(80, 80)
+    )
+    
+    if len(detected_faces) == 0:
         return []
+    
+    results = []
+    for (x, y, w, h) in detected_faces:
+        face_roi = gray[y:y+h, x:x+w]
+        face_roi = cv2.resize(face_roi, (200, 200))
+        
+        try:
+            label, confidence = recognizer.predict(face_roi)
+            # LBPH confidence: lower = better match. Typically < 80 is a good match.
+            distance = confidence / 100.0  # Normalize to 0-1 range
+            
+            logger.info(f"PREDICT: label={label}, confidence={confidence:.1f}, emp_id={label_map.get(label, 'UNKNOWN')}")
+            
+            if label in label_map and confidence < 80:
+                results.append({
+                    "emp_id": label_map[label],
+                    "bbox": (int(x), int(y), int(w), int(h)),
+                    "distance": distance
+                })
+            else:
+                logger.info(f"REJECT: confidence {confidence:.1f} too high (>80) or label {label} not in map")
+        except Exception as e:
+            logger.error(f"PREDICT ERROR: {e}")
+    
+    return results
+
 
 def register_face(emp_id: str, image_bytes: bytes, image_idx: int):
     """
     Saves an image byte string to the filesystem under the employee's directory.
+    Then retrains the recognizer so it can immediately recognize the new face.
     """
     try:
         emp_dir = os.path.join(FACES_DB_PATH, emp_id)
@@ -149,17 +218,9 @@ def register_face(emp_id: str, image_bytes: bytes, image_idx: int):
         cv2.imwrite(image_path, img)
         logger.info(f"Saved face image to {image_path}")
         
-        # Invalidate DeepFace cache so it reloads the new image on next recognition
-        pkl_path = os.path.join(FACES_DB_PATH, "representations_vgg_face.pkl")
-        if os.path.exists(pkl_path):
-            try:
-                os.remove(pkl_path)
-                print("Invalidated DeepFace representations cache")
-            except Exception as e:
-                print(f"Failed to remove cache file: {e}")
+        # Retrain the model with the new face
+        train_recognizer()
                 
-        # We don't call DeepFace.find here anymore to avoid long wait times during upload.
-        # The cache will be rebuilt during the next recognition call.
         return True
     except Exception as e:
         print(f"Error registering face for {emp_id}: {e}")
