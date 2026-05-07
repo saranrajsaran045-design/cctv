@@ -192,10 +192,20 @@ def get_emps(db: Session = Depends(get_db)):
 
 @app.post("/employees")
 def create_emp(employee: schemas.EmployeeCreate, db: Session = Depends(get_db)):
+    # BUG FIX: Check if ID already exists
+    existing = db.query(models.Employee).filter(models.Employee.emp_id == employee.emp_id).first()
+    if existing:
+        raise HTTPException(status_code=400, detail=f"Employee ID '{employee.emp_id}' already registered.")
+        
     hashed_pw = auth.get_password_hash(employee.password)
     new_emp = models.Employee(emp_id=employee.emp_id, name=employee.name, department=employee.department, hashed_password=hashed_pw)
     db.add(new_emp)
-    db.commit()
+    try:
+        db.commit()
+        db.refresh(new_emp)
+    except Exception as e:
+        db.rollback()
+        raise HTTPException(status_code=500, detail=f"Database error: {str(e)}")
     return new_emp
 
 @app.put("/employees/{emp_id}")
