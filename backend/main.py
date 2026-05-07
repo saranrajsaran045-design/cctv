@@ -41,6 +41,15 @@ def startup_populate_db():
     os.makedirs("faces_db", exist_ok=True)
     
     db = next(get_db())
+    
+    # NEW: Restore faces from DB to local disk for DeepFace to use
+    try:
+        from sqlalchemy.orm import joinedload
+        employees_with_faces = db.query(models.Employee).options(joinedload(models.Employee.faces)).all()
+        face_engine.sync_faces_from_db(employees_with_faces)
+    except Exception as e:
+        print(f"SYNC ERROR: Could not restore faces: {e}")
+        
     # Create admin user if it doesn't exist
     admin = db.query(models.User).filter(models.User.username == "admin").first()
     if not admin:
@@ -306,7 +315,7 @@ async def register_face_route(emp_id: str, file: UploadFile = File(...), db: Ses
     
     content = await file.read()
     
-    # We need to know how many images already exist to name the new one
+    # Save to local disk for immediate use
     emp_dir = os.path.join(face_engine.FACES_DB_PATH, emp_id)
     existing_images = 0
     if os.path.exists(emp_dir):
@@ -315,9 +324,17 @@ async def register_face_route(emp_id: str, file: UploadFile = File(...), db: Ses
     success = face_engine.register_face(emp_id, content, existing_images)
     
     if not success:
-        raise HTTPException(status_code=500, detail="Failed to save face image")
+        raise HTTPException(status_code=500, detail="Failed to save face image to disk")
     
-    return {"status": "ok", "message": f"Face image {existing_images} registered"}
+    # NEW: Save to Database for persistence across restarts
+    try:
+        new_face = models.EmployeeFace(employee_id=emp.id, image_data=content)
+        db.add(new_face)
+        db.commit()
+    except Exception as e:
+        print(f"DB SAVE ERROR: Could not persist face image: {e}")
+    
+    return {"status": "ok", "message": f"Face image {existing_images} registered and persisted"}
 
 @app.post("/attendance/webcam")
 async def webcam(file: UploadFile = File(...), expected_id: Optional[str] = Form(None), type: Optional[str] = Form("in"), db: Session = Depends(get_db)):

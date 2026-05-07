@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
+from sqlalchemy import Column, Integer, String, DateTime, ForeignKey, LargeBinary
 from sqlalchemy.sql import func
 from sqlalchemy.orm import relationship
 from database import Base
@@ -27,6 +27,23 @@ class Employee(Base):
         back_populates="employee",
         cascade="all, delete-orphan"
     )
+    
+    faces = relationship(
+        "EmployeeFace",
+        back_populates="employee",
+        cascade="all, delete-orphan"
+    )
+
+
+class EmployeeFace(Base):
+    """Stored Face Images for Persistence"""
+    __tablename__ = "employee_faces"
+    id          = Column(Integer, primary_key=True, index=True)
+    employee_id = Column(Integer, ForeignKey("employees.id", ondelete="CASCADE"))
+    image_data  = Column(LargeBinary, nullable=False)
+    created_at  = Column(DateTime, server_default=func.now())
+
+    employee = relationship("Employee", back_populates="faces")
 
 
 class AttendanceLog(Base):

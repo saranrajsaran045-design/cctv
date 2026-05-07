@@ -27,6 +27,28 @@ FACES_DB_PATH = os.path.abspath("faces_db")
 if not os.path.exists(FACES_DB_PATH):
     os.makedirs(FACES_DB_PATH)
 
+def sync_faces_from_db(employees_with_faces):
+    """
+    Restores the local faces_db folder from database records.
+    employees_with_faces: List of objects with emp_id and faces (list of EmployeeFace)
+    """
+    logger.info(f"SYNC: Restoring faces for {len(employees_with_faces)} employees...")
+    for emp in employees_with_faces:
+        emp_dir = os.path.join(FACES_DB_PATH, emp.emp_id)
+        os.makedirs(emp_dir, exist_ok=True)
+        
+        for idx, face in enumerate(emp.faces):
+            image_path = os.path.join(emp_dir, f"db_restore_{idx}.jpg")
+            if not os.path.exists(image_path):
+                with open(image_path, "wb") as f:
+                    f.write(face.image_data)
+    
+    # Invalidate cache after restore
+    pkl_path = os.path.join(FACES_DB_PATH, "representations_vgg_face.pkl")
+    if os.path.exists(pkl_path):
+        os.remove(pkl_path)
+    logger.info("SYNC: Face database restoration complete.")
+
 def recognize_face(frame_np):
     """
     Recognizes faces in a given frame.
