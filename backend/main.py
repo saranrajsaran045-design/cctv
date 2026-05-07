@@ -278,15 +278,14 @@ def delete_emp(emp_id: str, db: Session = Depends(get_db)):
     db.delete(emp)
     db.commit()
     
-    # Delete associated face images and cache
+    # Delete associated face images
     emp_dir = os.path.join(face_engine.FACES_DB_PATH, emp_id)
     if os.path.exists(emp_dir):
         import shutil
         shutil.rmtree(emp_dir)
-        pkl_path = os.path.join(face_engine.FACES_DB_PATH, "representations_vgg_face.pkl")
-        if os.path.exists(pkl_path):
-            try: os.remove(pkl_path)
-            except: pass
+    
+    # Retrain the face recognizer without the deleted employee
+    face_engine.train_recognizer()
 
     return {"status": "ok"}
 
@@ -303,16 +302,20 @@ def get_primary_face(emp_id: str):
 
 @app.delete("/employees/{emp_id}/faces")
 def delete_emp_faces(emp_id: str, db: Session = Depends(get_db)):
+    # Delete from disk
     emp_dir = os.path.join(face_engine.FACES_DB_PATH, emp_id)
     if os.path.exists(emp_dir):
         import shutil
         shutil.rmtree(emp_dir)
-        
-        # Invalidate DeepFace cache
-        pkl_path = os.path.join(face_engine.FACES_DB_PATH, "representations_vgg_face.pkl")
-        if os.path.exists(pkl_path):
-            try: os.remove(pkl_path)
-            except: pass
+    
+    # Delete from database
+    emp = db.query(models.Employee).filter(models.Employee.emp_id == emp_id).first()
+    if emp:
+        db.query(models.EmployeeFace).filter(models.EmployeeFace.employee_id == emp.id).delete()
+        db.commit()
+    
+    # Retrain the face recognizer without the deleted faces
+    face_engine.train_recognizer()
             
     return {"status": "ok", "message": "All face photos deleted"}
 
