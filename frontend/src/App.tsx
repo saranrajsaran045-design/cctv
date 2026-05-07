@@ -47,14 +47,14 @@ function App() {
           path="/*"
           element={
             <PrivateRoute>
-              <div className="flex h-screen bg-gray-100">
+              <div className="flex flex-col md:flex-row h-screen bg-gray-100">
                 {role === 'admin' ? (
                   <Sidebar setIsAuthenticated={setIsAuthenticated} />
                 ) : (
                   <EmployeeSidebar setIsAuthenticated={setIsAuthenticated} />
                 )}
                 <div className="flex-1 overflow-auto">
-                  <main className="p-8">
+                  <main className="p-4 md:p-8">
                     <Routes>
                       {role === 'admin' ? (
                         <>

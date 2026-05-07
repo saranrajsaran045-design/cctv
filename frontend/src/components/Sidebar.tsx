@@ -26,39 +26,39 @@ const Sidebar: React.FC<SidebarProps> = ({ setIsAuthenticated }) => {
   ];
 
   return (
-    <div className="w-64 bg-white shadow-lg flex flex-col">
-      <div className="p-6 border-b">
+    <div className="w-full md:w-64 bg-white shadow-lg flex flex-row md:flex-col fixed bottom-0 md:static md:h-screen z-50 border-t md:border-t-0 md:border-r">
+      <div className="hidden md:block p-6 border-b">
         <h1 className="text-2xl font-bold text-blue-600 flex items-center gap-2">
           <Camera className="text-blue-600" /> SmartTrack
         </h1>
       </div>
 
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="flex-1 flex md:block p-2 md:p-4 justify-around md:space-y-2">
         {navItems.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
             className={({ isActive }) =>
-              `flex items-center gap-3 px-4 py-3 rounded-lg transition-colors ${
+              `flex flex-col md:flex-row items-center gap-1 md:gap-3 px-2 md:px-4 py-2 md:py-3 rounded-xl transition-all ${
                 isActive
-                  ? 'bg-blue-50 text-blue-600 font-medium'
-                  : 'text-gray-600 hover:bg-gray-50 hover:text-blue-600'
+                  ? 'bg-blue-50 text-blue-600 font-bold scale-110 md:scale-100'
+                  : 'text-gray-500 hover:bg-gray-50 hover:text-blue-600'
               }`
             }
           >
             {item.icon}
-            {item.label}
+            <span className="text-[10px] md:text-sm font-medium">{item.label.split(' ')[0]}</span>
           </NavLink>
         ))}
       </nav>
 
-      <div className="p-4 border-t">
+      <div className="p-2 md:p-4 border-l md:border-l-0 md:border-t flex items-center justify-center">
         <button
           onClick={handleLogout}
-          className="flex items-center gap-3 px-4 py-3 w-full rounded-lg text-red-600 hover:bg-red-50 transition-colors"
+          className="flex flex-col md:flex-row items-center gap-1 md:gap-3 px-2 md:px-4 py-2 md:py-3 w-full rounded-xl text-red-500 hover:bg-red-50 transition-colors"
         >
           <LogOut size={20} />
-          Logout
+          <span className="text-[10px] md:text-sm font-medium">Exit</span>
         </button>
       </div>
     </div>

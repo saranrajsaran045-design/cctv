@@ -24,8 +24,8 @@ const EmployeeSidebar: React.FC<SidebarProps> = ({ setIsAuthenticated }) => {
   ];
 
   return (
-    <div className="w-64 bg-white h-full border-r border-gray-100 flex flex-col shadow-sm">
-      <div className="p-6">
+    <div className="w-full md:w-64 bg-white shadow-lg flex flex-row md:flex-col fixed bottom-0 md:static md:h-screen z-50 border-t md:border-t-0 md:border-r">
+      <div className="hidden md:block p-6">
         <div className="flex items-center gap-2 text-blue-600 mb-8">
           <div className="bg-blue-600 p-2 rounded-lg text-white">
             <Camera size={24} />
@@ -52,7 +52,32 @@ const EmployeeSidebar: React.FC<SidebarProps> = ({ setIsAuthenticated }) => {
         </nav>
       </div>
 
-      <div className="mt-auto p-6 border-t border-gray-50">
+      {/* Mobile Nav */}
+      <nav className="md:hidden flex-1 flex p-2 justify-around items-center">
+        {menuItems.map((item) => (
+          <NavLink
+            key={item.path}
+            to={item.path}
+            className={({ isActive }) =>
+              `flex flex-col items-center gap-1 p-2 rounded-xl transition-all ${
+                isActive ? 'text-blue-600 bg-blue-50 font-bold' : 'text-gray-500'
+              }`
+            }
+          >
+            {item.icon}
+            <span className="text-[10px]">{item.label.split(' ')[0]}</span>
+          </NavLink>
+        ))}
+        <button
+          onClick={handleLogout}
+          className="flex flex-col items-center gap-1 p-2 text-red-500 rounded-xl"
+        >
+          <LogOut size={20} />
+          <span className="text-[10px]">Exit</span>
+        </button>
+      </nav>
+
+      <div className="hidden md:flex mt-auto p-6 border-t border-gray-50 flex-col">
         <div className="bg-blue-50 rounded-2xl p-4 mb-4 border border-blue-100">
           <div className="flex items-center gap-2 text-blue-700 mb-1">
             <ShieldCheck size={16} />
