@@ -1,7 +1,11 @@
 import axios from 'axios';
 
 const getApiUrl = () => {
-  return `/api`;
+  // Use the environment variable VITE_API_URL if defined, 
+  // otherwise fallback to '/api' for local development proxy.
+  const url = import.meta.env.VITE_API_URL || '/api';
+  console.log('API Base URL:', url);
+  return url;
 };
 
 export const API_URL = getApiUrl();

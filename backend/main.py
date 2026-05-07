@@ -35,6 +35,21 @@ models.Base.metadata.create_all(bind=engine)
 
 app = FastAPI(title="CCTV Attendance System")
 
+@app.on_event("startup")
+def startup_populate_db():
+    db = next(get_db())
+    # Create admin user if it doesn't exist
+    admin = db.query(models.User).filter(models.User.username == "admin").first()
+    if not admin:
+        print("SEEDING: Creating default admin user...")
+        admin_user = models.User(
+            username="admin",
+            hashed_password=auth.get_password_hash("admin123")
+        )
+        db.add(admin_user)
+        db.commit()
+    db.close()
+
 # Fix CORS: allow_origins=["*"] and allow_credentials=True is invalid.
 # We must specify the origins if we want to allow credentials (which axios might use).
 app.add_middleware(
