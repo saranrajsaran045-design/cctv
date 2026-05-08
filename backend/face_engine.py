@@ -162,8 +162,8 @@ def recognize_face(frame_np):
     detected_faces = face_cascade.detectMultiScale(
         gray, 
         scaleFactor=1.1, 
-        minNeighbors=5, 
-        minSize=(80, 80)
+        minNeighbors=4, 
+        minSize=(50, 50)
     )
     
     if len(detected_faces) == 0:
@@ -176,19 +176,19 @@ def recognize_face(frame_np):
         
         try:
             label, confidence = recognizer.predict(face_roi)
-            # LBPH confidence: lower = better match. Typically < 80 is a good match.
+            # LBPH confidence: lower = better match. 
             distance = confidence / 100.0  # Normalize to 0-1 range
             
             logger.info(f"PREDICT: label={label}, confidence={confidence:.1f}, emp_id={label_map.get(label, 'UNKNOWN')}")
             
-            if label in label_map and confidence < 80:
+            if label in label_map and confidence < 110:
                 results.append({
                     "emp_id": label_map[label],
                     "bbox": (int(x), int(y), int(w), int(h)),
                     "distance": distance
                 })
             else:
-                logger.info(f"REJECT: confidence {confidence:.1f} too high (>80) or label {label} not in map")
+                logger.info(f"REJECT: confidence {confidence:.1f} too high (>110) or label {label} not in map")
         except Exception as e:
             logger.error(f"PREDICT ERROR: {e}")
     
