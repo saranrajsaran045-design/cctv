@@ -181,14 +181,19 @@ def recognize_face(frame_np):
             
             logger.info(f"PREDICT: label={label}, confidence={confidence:.1f}, emp_id={label_map.get(label, 'UNKNOWN')}")
             
-            if label in label_map and confidence < 110:
+            if label in label_map and confidence < 160:
                 results.append({
                     "emp_id": label_map[label],
                     "bbox": (int(x), int(y), int(w), int(h)),
                     "distance": distance
                 })
             else:
-                logger.info(f"REJECT: confidence {confidence:.1f} too high (>110) or label {label} not in map")
+                logger.info(f"REJECT: confidence {confidence:.1f} too high (>160) or label {label} not in map")
+                results.append({
+                    "emp_id": "unknown",
+                    "bbox": (int(x), int(y), int(w), int(h)),
+                    "distance": distance
+                })
         except Exception as e:
             logger.error(f"PREDICT ERROR: {e}")
     
