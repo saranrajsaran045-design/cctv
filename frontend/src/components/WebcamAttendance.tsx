@@ -81,7 +81,11 @@ const WebcamAttendance: React.FC = () => {
       canvas.height = video.videoHeight || 480;
       const ctx = canvas.getContext('2d');
       if (!ctx) return resolve(null);
+      ctx.save();
+      ctx.translate(canvas.width, 0);
+      ctx.scale(-1, 1);
       ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
+      ctx.restore();
       canvas.toBlob((blob) => resolve(blob), 'image/jpeg', 0.92);
     });
   };
