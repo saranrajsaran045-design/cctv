@@ -371,7 +371,8 @@ async def webcam(file: UploadFile = File(...), expected_id: Optional[str] = Form
     
     # NEW: Handle UNKNOWN faces (when AI fails to match or DeepFace is offline)
     if recognized_id == "unknown":
-        return {"status": "none", "message": "Face detected, but not recognized. Please ensure good lighting or contact admin."}
+        score = best.get("distance", 0) * 100
+        return {"status": "none", "message": f"Face detected, but confidence too poor ({score:.1f} > 160). Please ensure good lighting and look directly at the camera."}
     
     # NEW: Security check for Employee Login (Case-insensitive)
     if expected_id:
