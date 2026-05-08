@@ -23,21 +23,17 @@ if SQLALCHEMY_DATABASE_URL:
         max_overflow=20
     )
 else:
-    # Priority 2: SQL SERVER (Local Development)
-    SQL_SERVER   = os.getenv("SQL_SERVER",   r"(LocalDB)\MSSQLLocalDB")
-    SQL_DATABASE = os.getenv("SQL_DATABASE", "CCTV_Attendance")
-    SQL_DRIVER   = os.getenv("SQL_DRIVER",   "ODBC+Driver+17+for+SQL+Server")
-
-    SQLALCHEMY_DATABASE_URL = (
-        f"mssql+pyodbc://{SQL_SERVER}/{SQL_DATABASE}"
-        f"?driver={SQL_DRIVER}&Trusted_Connection=yes&TrustServerCertificate=yes"
+    # Priority 2: SQLite (Local Development fallback — no extra drivers needed)
+    import warnings
+    warnings.warn(
+        "DATABASE_URL not set — using local SQLite database (cctv_local.db). "
+        "Set DATABASE_URL to a PostgreSQL URL for production.",
+        stacklevel=2,
     )
-    
+    SQLALCHEMY_DATABASE_URL = "sqlite:///./cctv_local.db"
     engine = create_engine(
         SQLALCHEMY_DATABASE_URL,
-        pool_pre_ping=True,
-        pool_recycle=1800,
-        use_setinputsizes=False,
+        connect_args={"check_same_thread": False},
     )
 
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
