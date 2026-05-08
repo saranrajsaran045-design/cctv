@@ -275,6 +275,11 @@ def delete_emp(emp_id: str, db: Session = Depends(get_db)):
     emp = db.query(models.Employee).filter(models.Employee.emp_id == emp_id).first()
     if not emp:
         raise HTTPException(status_code=404, detail="Employee not found")
+        
+    # Explicitly delete child records first to prevent Postgres ForeignKey Integrity errors
+    db.query(models.AttendanceLog).filter(models.AttendanceLog.employee_id == emp.id).delete()
+    db.query(models.EmployeeFace).filter(models.EmployeeFace.employee_id == emp.id).delete()
+    
     db.delete(emp)
     db.commit()
     
